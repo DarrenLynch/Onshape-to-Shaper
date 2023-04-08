@@ -36,10 +36,11 @@ def string2numpy(s):
     return arr
 
 def reverse_matricies(matrix_list):
+    reversed_list = []
     for count, matrix in enumerate(matrix_list):
-        matrix_list[count] = np.flip(matrix, axis=0)
+        reversed_list.append(np.flip(matrix, axis=0))
         
-    return matrix_list
+    return reversed_list
 
 def order_matricies(ordered_matrix_list, matrix_list):
     
@@ -55,14 +56,17 @@ def order_matricies(ordered_matrix_list, matrix_list):
                 if ((first_point[0] == last_point[0])
                     and (first_point[1] == last_point[1])):
                     ordered_matrix_list.append(matrix)
+                    #print(first_point, last_point, True)
                     del matrix_list[count]
+                #else:
+                    #print(first_point, last_point, False)
                     
         size_ordered_matrix_list_finish = len(ordered_matrix_list)
         diff = size_ordered_matrix_list_start - size_ordered_matrix_list_finish
     
     return ordered_matrix_list
 
-def write_polyline_svg(svg_dict, file, points, stroke="black", stroke_width=2, fill="white"):
+def write_polyline_svg(svg_dict, file, polylines, stroke="black", stroke_width=2, fill="white"):
     """
     Write a polyline to an SVG file.
     
@@ -74,23 +78,36 @@ def write_polyline_svg(svg_dict, file, points, stroke="black", stroke_width=2, f
     - fill: A string representing the fill color (default: "none").
     """
     
-    first_point = points[0, :]
-    last_point = points[-1, :]
-    if ((first_point[0] == last_point[0]) and (first_point[1] == last_point[1])):
-        close_string = f'z" stroke="{stroke}" stroke-width="{stroke_width}" fill="{fill}" />\n'
-    else:
-        close_string = f'" stroke="{stroke}" stroke-width="{stroke_width}" fill="{fill}" />\n'
     
+    
+    #Initialise svg
     view_box = get_view_box(svg_dict)
     width_height = get_width_height(svg_dict)
     # write the SVG content
     file.write('<svg width="{}" height="{}" viewBox="{} {} {} {}" xmlns="http://www.w3.org/2000/svg">\n'.format(*width_height, *view_box))
+    
+    #Write paths
+    for polyline in polylines:
+        
+        first_point = polyline[0, :]
+        last_point = polyline[-1, :]
+        
+        if ((first_point[0] == last_point[0]) and (first_point[1] == last_point[1])):
+            close_string = f'z" stroke="{stroke}" stroke-width="{stroke_width}" fill="{fill}" />\n'
+        else:
+            close_string = f'" stroke="{stroke}" stroke-width="{stroke_width}" fill="{fill}" />\n'
+            
+        file.write('<path d="M')
+        for point in polyline:
+            file.write(f'{point[0]},{point[1]} ')
+        file.write(close_string)
+    file.write('</svg>\n')
+    
+def write_path(points, file):
     file.write('<path d="M')
     for point in points:
         file.write(f'{point[0]},{point[1]} ')
-    file.write(close_string)
-    file.write('</svg>\n')
-    
+        
 def get_format(format_string='exterior_cut'):
     formats = {
         'on line': {'fill': 'none', 'stroke': 'grey'},
@@ -102,7 +119,32 @@ def get_format(format_string='exterior_cut'):
     
     return formats[format_string]
 
-def onshape_svg_to_shaper_svg(input_path, output_path='output.svg', format_string='interior'):
+def match_polylines_forward_backwards(polyline_matricies):
+    merged_polylines = []
+    
+    while len(polyline_matricies) > 0:
+        ordered_matrix_list = []
+        ordered_matrix_list.append(polyline_matricies[0])
+        del polyline_matricies[0]
+        
+        ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
+        
+        diff = 1
+        
+        while diff > 0:
+            start_length = len(ordered_matrix)
+            polyline_matricies = reverse_matricies(polyline_matricies)
+            ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
+            
+            end_length = len(ordered_matrix)
+            diff = end_length - start_length
+            
+        merged_polylines.append(np.concatenate(ordered_matrix, axis=0))
+        
+    return merged_polylines
+
+def onshape_svg_to_shaper_svg(input_path, output_path='output.svg', format_string='on line'):
+    global merged_polylines
     # Step 1: Read the SVG file
     with open(input_path, 'r') as f:
         svg_string = f.read()
@@ -127,24 +169,14 @@ def onshape_svg_to_shaper_svg(input_path, output_path='output.svg', format_strin
             polyline_matricies = []
             for dictionary in merged_dict[element_type]:
                 polyline_matricies.append(string2numpy(dictionary['@points']))
-            
-            merged_polylines = []
-            
-            while len(polyline_matricies) > 0:
-                ordered_matrix_list = []
-                ordered_matrix_list.append(polyline_matricies[0])
-                del polyline_matricies[0]
                 
-                ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
-                polyline_matricies = reverse_matricies(polyline_matricies)
-                ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
-                
-                merged_polylines.append(np.concatenate(ordered_matrix, axis=0))
+            merged_polylines = match_polylines_forward_backwards(polyline_matricies)
+            
         
     with open(output_path, 'w') as f:
-        for count, polyline in enumerate(merged_polylines):
-            points = polyline
-            write_polyline_svg(svg_dict, f, points,
-                               stroke=stroke, fill=fill)
+        write_polyline_svg(svg_dict, f, merged_polylines,
+                           stroke=stroke, fill=fill)
             
-onshape_svg_to_shaper_svg(input_path='Wall Brace.svg', output_path='Wall Brace Closed.svg')
+if __name__ == "__main__":
+    onshape_svg_to_shaper_svg(input_path='Wall Brace.svg', 
+                              output_path='Wall Brace - Closed.svg')
