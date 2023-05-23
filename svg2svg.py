@@ -1,7 +1,5 @@
-import pathlib
 import xmltodict
 import copy
-import traceback
 
 from collections import OrderedDict
 
@@ -47,7 +45,6 @@ class vector_object():
         empty_group_dict = OrderedDict([('@d', None)])
         cleaned_dicts = remove_at_keys(self.original_svg_dict)
         
-        polylines_to_remove = []
         for _dict in enumerate(zip(cleaned_dicts['svg']['g']['g'], 
                          self.original_svg_dict['svg']['g']['g'])):
             if _dict[1][0]:
@@ -62,6 +59,7 @@ class vector_object():
                     for (points_dict, 
                          points_dict_cleaned) in zip(polyline_list, 
                                                      polyline_list_cleaned):
+                        
                         if points_dict_cleaned:
                             polyline_matricies.append(string2numpy(points_dict['@points']))
                             
@@ -81,10 +79,10 @@ class vector_object():
                         self.svg_dict['svg']['g']['g'].append(new_dict)
                     
                     self.removed_polyline_index.append(_dict[0])
-        print(len(self.svg_dict['svg']['g']['g']))
+                    
         for index in sorted(self.removed_polyline_index, reverse=True):
             del self.svg_dict['svg']['g']['g'][index]
-        print(len(self.svg_dict['svg']['g']['g']))
+            
             
     def sort_colours(self):
         '''
@@ -103,25 +101,186 @@ class vector_object():
         for group, idx in zip(groups, idxs):
             if (len(group) > 1) and ('polyline' in group[0].keys()):
                 for i, appending_lines in enumerate(group):
-                    if i > 0:
+                    polyline_type = type(self.original_svg_dict['svg']['g']['g'][idx[0]]['polyline'])
+                    
+                    if i > 0 and polyline_type == list:
                         self.original_svg_dict['svg']['g']['g'][idx[0]]['polyline'].extend(
                             self.original_svg_dict['svg']['g']['g'][idx[i]]['polyline'])
+                        
+                    elif i > 0 and polyline_type == OrderedDict:
+                        raise ValueError("polyline is type OrderedDict, expected list")
+                        
         
-        for group, idx in zip(groups, idxs):
-            if (len(group) > 1) and ('polyline' in group[0].keys()):
-                for i, appending_lines in enumerate(group):
+        index_to_remove = []
+        for idx in idxs:
+            if (len(idx) > 1):
+                for i, appending_lines in enumerate(idx):
                     if i > 0:
-                        del self.original_svg_dict['svg']['g']['g'][idx[i]]
+                        index_to_remove.append(idx[i])
+                        
+        index_to_remove.sort(reverse=True)
+        
+        for index in index_to_remove:
+            del self.original_svg_dict['svg']['g']['g'][index]
+            del self.svg_dict['svg']['g']['g'][index]
+                        
         
         return groups, idxs
             
     def tosvg(self, output_path):
+        '''
+        export the xml back to svg
+
+        Parameters
+        ----------
+        output_path : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        '''
+        
         xml_str = xmltodict.unparse(self.svg_dict)
         
         # Write the XML string to a file with .svg extension
         with open(output_path, 'w') as f:
             f.write(xml_str)
+            
+    def decode_format(self):
+        '''
+        re-format translating from OnShape to colours to shaper depth and cut
 
+        Returns
+        -------
+        None.
+
+        '''
+        #line width is type
+            #1 - inside
+            #2 - outside
+            #3 - pocket
+            #4 - on-line
+        
+        #line colour is depth
+            #color in hex is in 1/10th mm
+        pass
+    
+    def _remove_boarder(self):
+        '''
+        remove the rectangle OnShape outputs automatically but is not part of sketch
+
+        Returns
+        -------
+        None.
+
+        '''
+        for count, _dict in enumerate(self.svg_dict['svg']['g']['g']):
+            if 'rect' in _dict:
+                del self.svg_dict['svg']['g']['g'][count]
+                break
+            
+    def _list_single_polylines(self):
+        for count, _dict in enumerate(self.svg_dict['svg']['g']['g']):
+            if 'polyline' in _dict:
+                if type(_dict['polyline']) is OrderedDict:
+                    self.original_svg_dict['svg']['g']['g'][count]['polyline'] = \
+                        [self.original_svg_dict['svg']['g']['g'][count]['polyline']]
+    
+    def plot_paths_rand_color(self):
+        '''
+        plot lines with random colors to make sure the joins happen where expected
+
+        Returns
+        -------
+        None.
+
+        '''
+        import matplotlib.pyplot as plt
+        from  matplotlib.lines import Line2D
+        
+        paths = []
+        for _dict in self.svg_dict['svg']['g']['g']:
+            if 'path' in _dict:
+                paths.append(_dict)
+        
+        # Create a figure and axis
+        fig, ax = plt.subplots()
+        
+        max_x = None
+        min_x = None
+        
+        max_y = None
+        min_y = None
+        
+        # Plot each path
+        for path_data in paths:
+            path_str = path_data['path']["@d"]
+            
+            path_str = path_str.strip('M')
+            path_str = path_str.strip('z')
+            
+            col = (np.random.random(), np.random.random(), np.random.random())
+            
+            path = string2numpy(path_str)
+            path_patch = Line2D(path[:, 0], path[:, 1], color=col)
+            
+            ax.add_line(path_patch)
+            
+            if max_x == None:
+                max_x = np.max(path[:, 0])
+            if min_x == None:
+                min_x = np.min(path[:, 0])
+            if max_y == None:
+                max_y = np.max(path[:, 1])
+            if min_y == None:
+                min_y = np.min(path[:, 1])
+            
+            if np.max(path[:, 0]) > max_x:
+                max_x = np.max(path[:, 0])
+            if np.min(path[:, 0]) < min_x:
+                min_x = np.min(path[:, 0])
+            if np.max(path[:, 1]) > max_y:
+                max_y = np.max(path[:, 1])
+            if np.min(path[:, 1]) < min_y:
+                min_y = np.min(path[:, 1])
+        
+        ax.set_xlim(max_x, min_x)
+        ax.set_ylim(max_y, min_y)
+        
+        # Show the plot
+        plt.show()
+        
+    def onshape2shaper(self, output_path, plot_line_checker=False):
+        '''
+        A one liner to call methods in order
+
+        Parameters
+        ----------
+        output_path : TYPE
+            DESCRIPTION.
+        plot_line_checker : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        '''
+        self.read_svg()
+        
+        self._list_single_polylines()
+        self.sort_colours()
+
+        self.polyline_to_path()
+        self._remove_boarder()
+        
+        self.tosvg(output_path)
+        if plot_line_checker:
+            self.plot_paths_rand_color()
+        
+        
 def remove_at_keys(d):
     '''
     Clean a dictionary of keys prepended with @
@@ -173,7 +332,7 @@ def string2numpy(s):
 def order_matricies(ordered_matrix_list, matrix_list):
     '''
     Order a list of matrixies so that the polylines joint in order
-
+    
     Parameters
     ----------
     ordered_matrix_list : TYPE
@@ -195,6 +354,16 @@ def order_matricies(ordered_matrix_list, matrix_list):
             
             last_point = ordered_matrix_list[-1][-1, :]
             first_point = matrix[0, :]
+            
+            polyline1 = ordered_matrix_list[-1]
+            polyline2 = matrix
+            
+            #ensure you do not add a line that is identical and traces back on 
+            #itself
+            if check_identical_polyline(polyline1, polyline2):
+                del matrix_list[count]
+                continue
+            
             if type(first_point) != type(None):
                 if ((first_point[0] == last_point[0])
                     and (first_point[1] == last_point[1])):
@@ -286,7 +455,15 @@ def numpy2pathstring(points):
     # Convert to string with comma separated x and y values and space 
     #separated between each coordinate
     points_string = ' '.join([f"{x:.2f},{y:.2f}" for x, y in points])
-    return 'M' + points_string
+    
+    points_string = 'M' + points_string
+    
+    first_point = points[0, :]
+    last_point = points[-1, :]
+    if ((first_point[0] == last_point[0]) and (first_point[1] == last_point[1])):
+        points_string = points_string + 'z'
+        
+    return points_string
 
 def compare_dicts(dict1, dict2, key_to_ignore):
     '''
@@ -367,10 +544,26 @@ def get_grouped_dicts(dict_list, key_to_ignore):
             indices[groups.index(g)].append(i)
             
     return groups, indices
+
+def check_identical_polyline(polyline1, polyline2):
+    # Check if the number of points is the same
+    if len(polyline1) != len(polyline2):
+        return False
+    
+    # Check if all corresponding points match
+    if not np.allclose(polyline1, polyline2):
+        return False
+    
+    return True
     
 if __name__ == "__main__":
-    svg = vector_object('Test2.svg')
-    svg.read_svg()
-    groups, index = svg.sort_colours()
-    svg.polyline_to_path()
-    svg.tosvg('Test2output.svg')
+    import pathlib
+    
+    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                              'Finger test/Cut 1 - Hole.svg')
+    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                               'Finger test/Cut 1 - Hole - closed.svg')
+    
+    svg = vector_object(input_path)
+    svg.onshape2shaper(output_path, plot_line_checker=True)
+    
