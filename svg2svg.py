@@ -33,6 +33,10 @@ class vector_object():
         self.svg_dict = xmltodict.parse(svg_string)
         self.original_svg_dict = copy.deepcopy(self.svg_dict)
         
+    def _add_shaper_xmlns(self):
+        self.svg_dict['svg']['@xmlns:shaper']\
+            ="http://www.shapertools.com/namespaces/shaper"
+        
     def polyline_to_path(self):
         '''
         Take all polylines in the dictionary, convert them to paths
@@ -162,10 +166,45 @@ class vector_object():
             #2 - outside
             #3 - pocket
             #4 - on-line
+            #5 - Guide
         
         #line colour is depth
             #color in hex is in 1/10th mm
-        pass
+            
+        #IMPORTANT! Depth should be first because color is used and will be 
+        #changed after because shaper uses color to define cut type
+        
+        #Define the Shaper Formats
+        formats = {
+            'interior': {'fill': 'white', 'stroke': 'black'},
+            'exterior': {'fill': 'black', 'stroke': 'black'},
+            'pocket': {'fill': 'grey', 'stroke': 'none'},
+            'on line': {'fill': 'none', 'stroke': 'grey'},
+            'guide': {'fill': 'none', 'stroke': 'blue'},
+            }
+        
+        
+        for count, _dict in enumerate(self.svg_dict['svg']['g']['g']):
+            if '@stroke' in _dict:
+                colour = _dict['@stroke']
+                colour = colour.strip('#')
+                
+                depth = float(colour)/10
+                
+                self.svg_dict['svg']['g']['g'][count]['@shaper:cutDepth'] \
+                    = str(depth) + 'mm'
+                    
+            if '@stroke-width' in _dict:
+                _type = int(float(_dict['@stroke-width'])/12)
+                if (_type < 1) or (_type > 5):
+                    _type = 4
+                
+                key = list(formats.keys())[_type-1]
+                
+                self.svg_dict['svg']['g']['g'][count]['@stroke'] \
+                    = formats[key]['stroke']
+                self.svg_dict['svg']['g']['g'][count]['@fill'] \
+                    = formats[key]['fill']
     
     def _remove_boarder(self):
         '''
@@ -269,14 +308,16 @@ class vector_object():
 
         '''
         self.read_svg()
-        
+        self._add_shaper_xmlns()
         self._list_single_polylines()
         self.sort_colours()
 
         self.polyline_to_path()
         self._remove_boarder()
+        self.decode_format()
         
         self.tosvg(output_path)
+        
         if plot_line_checker:
             self.plot_paths_rand_color()
         
