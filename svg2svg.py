@@ -587,6 +587,22 @@ def get_grouped_dicts(dict_list, key_to_ignore):
     return groups, indices
 
 def check_identical_polyline(polyline1, polyline2):
+    '''
+    Check if two poly lines are perfectly identical, this only evaluates points
+
+    Parameters
+    ----------
+    polyline1 : TYPE
+        DESCRIPTION.
+    polyline2 : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    bool
+        DESCRIPTION.
+
+    '''
     # Check if the number of points is the same
     if len(polyline1) != len(polyline2):
         return False
