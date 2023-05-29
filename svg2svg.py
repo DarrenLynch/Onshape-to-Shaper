@@ -53,8 +53,13 @@ class vector_object():
                          self.original_svg_dict['svg']['g']['g'])):
             if _dict[1][0]:
                 entity_type = list(_dict[1][0].keys())[0]
+                stroke_colour = _dict[1][1]['@stroke']
                 
-                if entity_type == 'polyline':
+                if (entity_type == 'polyline')\
+                    and (stroke_colour.srip('#') == 'ff0000'):
+                    pass
+                
+                elif entity_type == 'polyline':
                     
                     polyline_list = _dict[1][1]['polyline']
                     polyline_list_cleaned = _dict[1][0]['polyline']
@@ -87,7 +92,38 @@ class vector_object():
         for index in sorted(self.removed_polyline_index, reverse=True):
             del self.svg_dict['svg']['g']['g'][index]
             
+    def merge_polylines_to_paths(self, _dict):
+        empty_group_dict = OrderedDict([('@d', None)])
+        
+        polyline_list = _dict[1][1]['polyline']
+        polyline_list_cleaned = _dict[1][0]['polyline']
+        polyline_matricies = []
+        
+        for (points_dict, 
+             points_dict_cleaned) in zip(polyline_list, 
+                                         polyline_list_cleaned):
             
+            if points_dict_cleaned:
+                polyline_matricies.append(string2numpy(points_dict['@points']))
+                
+        #Merged polyline is the ordered list to make into a path
+        merged_polylines = match_polylines_forward_backwards(polyline_matricies)
+        #match_polylines_2(polyline_matricies)
+        for path in merged_polylines:
+            
+            path_string = numpy2pathstring(path)
+            
+            new_dict = copy.deepcopy(_dict[1][1])
+            del new_dict["polyline"]
+            new_dict['path'] = copy.deepcopy(empty_group_dict)
+            
+            new_dict['path']['@d'] = path_string
+            
+            self.svg_dict['svg']['g']['g'].append(new_dict)
+        
+        self.removed_polyline_index.append(_dict[0])
+    
+    
     def sort_colours(self):
         '''
         Identify all polylines with the same properties, and merge them
@@ -167,6 +203,8 @@ class vector_object():
             #3 - pocket
             #4 - on-line
             #5 - Guide
+            #6 - Anchor
+        
         
         #line colour is depth
             #color in hex is in 1/10th mm
@@ -181,6 +219,7 @@ class vector_object():
             'pocket': {'fill': 'grey', 'stroke': 'none'},
             'on line': {'fill': 'none', 'stroke': 'grey'},
             'guide': {'fill': 'none', 'stroke': 'blue'},
+            'anchor': {'fill': '#ff0000', 'stroke': '#ff0000'},
             }
         
         
@@ -189,14 +228,32 @@ class vector_object():
                 colour = _dict['@stroke']
                 colour = colour.strip('#')
                 
-                depth = float(colour)/10
-                
-                self.svg_dict['svg']['g']['g'][count]['@shaper:cutDepth'] \
-                    = str(depth) + 'mm'
+                try:
+                    depth = float(colour)/10
+                    '''
+                    self.svg_dict['svg']['g']['g'][count]['@shaper:cutDepth'] \
+                        = str(depth) + 'mm'
+                        '''
+                    if 'path' in self.svg_dict['svg']['g']['g'][count]:
+                        self.svg_dict['svg']['g']['g'][count]['path']['@shaper:cutDepth'] \
+                            = str(depth) + 'mm'
+                        
+                except:
+                    pass
                     
-            if '@stroke-width' in _dict:
+            if colour.strip('#') == 'ff0000':
+                _type = 6
+                
+                key = list(formats.keys())[_type-1]
+                
+                del self.svg_dict['svg']['g']['g'][count]['@stroke'] #\
+                    #= formats[key]['stroke']
+                self.svg_dict['svg']['g']['g'][count]['@fill'] \
+                    = formats[key]['fill']
+                
+            elif '@stroke-width' in _dict:
                 _type = int(float(_dict['@stroke-width'])/12)
-                if (_type < 1) or (_type > 5):
+                if (_type < 1) or (_type > 6):
                     _type = 4
                 
                 key = list(formats.keys())[_type-1]
@@ -205,6 +262,11 @@ class vector_object():
                     = formats[key]['stroke']
                 self.svg_dict['svg']['g']['g'][count]['@fill'] \
                     = formats[key]['fill']
+                '''
+                #at some point return stroke width to normal
+                self.svg_dict['svg']['g']['g'][count]['@stroke'] \
+                    = formats[key]['stroke']
+                '''
     
     def _remove_boarder(self):
         '''
@@ -617,9 +679,9 @@ if __name__ == "__main__":
     import pathlib
     
     input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/Cut 1 - Hole.svg')
+                              'Finger test/TestAnchor.svg')
     output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/Cut 1 - Hole - closed.svg')
+                               'Finger test/TestAnchor - closed.svg')
     
     svg = vector_object(input_path)
     svg.onshape2shaper(output_path, plot_line_checker=True)
