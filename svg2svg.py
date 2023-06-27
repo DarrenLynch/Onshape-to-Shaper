@@ -46,55 +46,30 @@ class vector_object():
         None.
 
         '''
-        empty_group_dict = OrderedDict([('@d', None)])
         cleaned_dicts = remove_at_keys(self.original_svg_dict)
         
         for _dict in enumerate(zip(cleaned_dicts['svg']['g']['g'], 
                          self.original_svg_dict['svg']['g']['g'])):
             if _dict[1][0]:
                 entity_type = list(_dict[1][0].keys())[0]
+                
                 stroke_colour = _dict[1][1]['@stroke']
                 
                 if (entity_type == 'polyline')\
-                    and (stroke_colour.srip('#') == 'ff0000'):
-                    pass
+                  and (stroke_colour.strip('#') == 'ff0000'):
+                        
+                    merged_polylines = self.to_merge_polylines(_dict)
+                    self.to_anchor(_dict, merged_polylines)
                 
                 elif entity_type == 'polyline':
                     
-                    polyline_list = _dict[1][1]['polyline']
-                    polyline_list_cleaned = _dict[1][0]['polyline']
-                    polyline_matricies = []
-                    
-                    for (points_dict, 
-                         points_dict_cleaned) in zip(polyline_list, 
-                                                     polyline_list_cleaned):
-                        
-                        if points_dict_cleaned:
-                            polyline_matricies.append(string2numpy(points_dict['@points']))
-                            
-                    #Merged polyline is the ordered list to make into a path
-                    merged_polylines = match_polylines_forward_backwards(polyline_matricies)
-                    #match_polylines_2(polyline_matricies)
-                    for path in merged_polylines:
-                        
-                        path_string = numpy2pathstring(path)
-                        
-                        new_dict = copy.deepcopy(_dict[1][1])
-                        del new_dict["polyline"]
-                        new_dict['path'] = copy.deepcopy(empty_group_dict)
-                        
-                        new_dict['path']['@d'] = path_string
-                        
-                        self.svg_dict['svg']['g']['g'].append(new_dict)
-                    
-                    self.removed_polyline_index.append(_dict[0])
+                    merged_polylines = self.to_merge_polylines(_dict)
+                    self.to_paths(_dict, merged_polylines)
                     
         for index in sorted(self.removed_polyline_index, reverse=True):
             del self.svg_dict['svg']['g']['g'][index]
             
-    def merge_polylines_to_paths(self, _dict):
-        empty_group_dict = OrderedDict([('@d', None)])
-        
+    def to_merge_polylines(self, _dict):
         polyline_list = _dict[1][1]['polyline']
         polyline_list_cleaned = _dict[1][0]['polyline']
         polyline_matricies = []
@@ -108,7 +83,12 @@ class vector_object():
                 
         #Merged polyline is the ordered list to make into a path
         merged_polylines = match_polylines_forward_backwards(polyline_matricies)
-        #match_polylines_2(polyline_matricies)
+        
+        return merged_polylines
+        
+    def to_paths(self, _dict, merged_polylines):
+        empty_group_dict = OrderedDict([('@d', None)])
+        
         for path in merged_polylines:
             
             path_string = numpy2pathstring(path)
@@ -122,7 +102,17 @@ class vector_object():
             self.svg_dict['svg']['g']['g'].append(new_dict)
         
         self.removed_polyline_index.append(_dict[0])
-    
+        
+    def to_anchor(self, _dict, merged_polylines):
+        
+        for polyline in merged_polylines:
+            cleaned_polyline = clean_anchor(polyline)
+            
+            self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']['@points']\
+                = to_points_string(cleaned_polyline)
+            self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']['@fill']\
+                = 'ff0000'
+            
     
     def sort_colours(self):
         '''
@@ -568,6 +558,27 @@ def numpy2pathstring(points):
         
     return points_string
 
+def to_points_string(points):
+    '''
+    Take a numpy array, convert them back to comma space seperated strings, prepending M
+
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    '''
+    # Convert to string with comma separated x and y values and space 
+    #separated between each coordinate
+    points_string = ' '.join([f"{x:.2f},{y:.2f}" for x, y in points])
+    
+    return points_string
+
 def compare_dicts(dict1, dict2, key_to_ignore):
     '''
     Take two dicts, compare if their properties are identical except for one key
@@ -674,14 +685,31 @@ def check_identical_polyline(polyline1, polyline2):
         return False
     
     return True
+
+def clean_anchor(polyline):
+    # Find indices where consecutive duplicates occur
+    duplicate_indices = np.flatnonzero(np.all(np.diff(polyline, axis=0) == 0, axis=1))
+
+    # Remove consecutive duplicates
+    filtered_polyline = np.delete(polyline, duplicate_indices + 1, axis=0)
+    
+    if np.array_equal(filtered_polyline[0], filtered_polyline[-1]):
+        # Remove the last point
+        filtered_polyline = filtered_polyline[:-1]
+        
+    size = filtered_polyline.shape[0]
+    if size != 3:
+        raise Exception('Anchor should have 3 points, has {}'.format(size))
+    else:
+        return filtered_polyline
     
 if __name__ == "__main__":
     import pathlib
     
     input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/TestAnchor.svg')
+                              'Finger test/Cut1 - RA.svg')
     output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/TestAnchor - closed.svg')
+                               'Finger test/Cut1 - RA - closed.svg')
     
     svg = vector_object(input_path)
     svg.onshape2shaper(output_path, plot_line_checker=True)
