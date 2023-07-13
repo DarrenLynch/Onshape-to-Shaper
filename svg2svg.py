@@ -1,6 +1,8 @@
 import xmltodict
 import copy
+import re
 
+import networkx as nx
 from collections import OrderedDict
 
 import numpy as np
@@ -15,6 +17,9 @@ class vector_object():
         self.vector_grouped_dict = {}
         self.polylines = []
         self.removed_polyline_index = []
+        
+        self.pixels_per_mm = 5
+        self.is_shaper_added = False
         
     def read_svg(self):
         '''
@@ -36,6 +41,34 @@ class vector_object():
     def _add_shaper_xmlns(self):
         self.svg_dict['svg']['@xmlns:shaper']\
             ="http://www.shapertools.com/namespaces/shaper"
+        self.is_shaper_added = True
+    def _get_pixels_per_mm(self):
+        global height_in_units
+        height_in_units = self.svg_dict['svg']['@height']
+        
+        def split_string(string):
+            pattern = r'(\d+(\.\d+)?)\s*(\D+)'
+            match = re.match(pattern, string)
+            
+            if match:
+                number = float(match.group(1))
+                unit = match.group(3)
+                result = [number, unit]
+                return result
+            else:
+                return None
+            
+        match = split_string(height_in_units)
+        
+        if match[1] != 'mm':
+            raise Exception('This conversion currently only support mm as a unit')
+            
+        else:
+            height_in_mm = match[0]
+            height_in_pixels = float(string2numpy(
+                self.svg_dict['svg']['@viewBox'])[3])
+            
+            self.pixels_per_mm = height_in_pixels/height_in_mm
         
     def polyline_to_path(self):
         '''
@@ -82,7 +115,7 @@ class vector_object():
                 polyline_matricies.append(string2numpy(points_dict['@points']))
                 
         #Merged polyline is the ordered list to make into a path
-        merged_polylines = match_polylines_forward_backwards(polyline_matricies)
+        merged_polylines = order_polylines(polyline_matricies)
         
         return merged_polylines
         
@@ -108,10 +141,16 @@ class vector_object():
         for polyline in merged_polylines:
             cleaned_polyline = clean_anchor(polyline)
             
-            self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']['@points']\
-                = to_points_string(cleaned_polyline)
-            self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']['@fill']\
-                = 'ff0000'
+            del self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']
+
+            # Create a new 'polygon' dictionary with the desired attributes
+            polygon_dict = {
+                '@points': to_points_string(cleaned_polyline),
+                '@fill': 'ff0000'
+            }
+            
+            # Replace the 'polyline' dictionary with the 'polygon' dictionary
+            self.svg_dict['svg']['g']['g'][_dict[0]]['polygon'] = polygon_dict
             
     
     def sort_colours(self):
@@ -172,7 +211,7 @@ class vector_object():
 
         '''
         
-        xml_str = xmltodict.unparse(self.svg_dict)
+        xml_str = xmltodict.unparse(self.svg_dict, pretty=True)
         
         # Write the XML string to a file with .svg extension
         with open(output_path, 'w') as f:
@@ -188,12 +227,12 @@ class vector_object():
 
         '''
         #line width is type
-            #1 - inside
-            #2 - outside
-            #3 - pocket
-            #4 - on-line
-            #5 - Guide
-            #6 - Anchor
+            #0.2mm - inside
+            #0.4mm - outside
+            #0.6mm - pocket
+            #0.8mm - on-line
+            #1.0mm - Guide
+            #1.2mm - Anchor
         
         
         #line colour is depth
@@ -220,11 +259,9 @@ class vector_object():
                 
                 try:
                     depth = float(colour)/10
-                    '''
-                    self.svg_dict['svg']['g']['g'][count]['@shaper:cutDepth'] \
-                        = str(depth) + 'mm'
-                        '''
-                    if 'path' in self.svg_dict['svg']['g']['g'][count]:
+                    
+                    if 'path' in self.svg_dict['svg']['g']['g'][count]\
+                        and self.is_shaper_added:
                         self.svg_dict['svg']['g']['g'][count]['path']['@shaper:cutDepth'] \
                             = str(depth) + 'mm'
                         
@@ -242,7 +279,9 @@ class vector_object():
                     = formats[key]['fill']
                 
             elif '@stroke-width' in _dict:
-                _type = int(float(_dict['@stroke-width'])/12)
+                _type = int(round((float(_dict['@stroke-width'])\
+                                   /self.pixels_per_mm)*10)/2)
+                
                 if (_type < 1) or (_type > 6):
                     _type = 4
                 
@@ -252,11 +291,18 @@ class vector_object():
                     = formats[key]['stroke']
                 self.svg_dict['svg']['g']['g'][count]['@fill'] \
                     = formats[key]['fill']
+                
                 '''
                 #at some point return stroke width to normal
                 self.svg_dict['svg']['g']['g'][count]['@stroke'] \
                     = formats[key]['stroke']
                 '''
+                
+    def remove_default_stroke(self):
+        del self.svg_dict['svg']['g']['@stroke']
+    
+    def flatten_groups(self):
+        self.svg_dict = {**self.svg_dict, **self.svg_dict['svg']['g']['g']}
     
     def _remove_boarder(self):
         '''
@@ -337,8 +383,8 @@ class vector_object():
             if np.min(path[:, 1]) < min_y:
                 min_y = np.min(path[:, 1])
         
-        ax.set_xlim(max_x, min_x)
-        ax.set_ylim(max_y, min_y)
+        ax.set_xlim(max_x*1.1, min_x - np.abs(min_x*0.1))
+        ax.set_ylim(max_y*1.1, min_y - np.abs(min_y*0.1))
         
         # Show the plot
         plt.show()
@@ -360,13 +406,16 @@ class vector_object():
 
         '''
         self.read_svg()
-        self._add_shaper_xmlns()
+        self._get_pixels_per_mm()
+        #self._add_shaper_xmlns()
         self._list_single_polylines()
         self.sort_colours()
 
         self.polyline_to_path()
         self._remove_boarder()
         self.decode_format()
+        
+        self.remove_default_stroke()
         
         self.tosvg(output_path)
         
@@ -422,113 +471,81 @@ def string2numpy(s):
     
     return arr
 
-def order_matricies(ordered_matrix_list, matrix_list):
-    '''
-    Order a list of matrixies so that the polylines joint in order
+def order_polylines(polyline_list):
+    """
+    Orders the points within each polyline and merges connected polylines in a 
+    list of 2D polylines.
     
-    Parameters
-    ----------
-    ordered_matrix_list : TYPE
-        DESCRIPTION.
-    matrix_list : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    ordered_matrix_list : TYPE
-        DESCRIPTION.
-
-    '''
-    diff = 1
-    
-    while diff != 0:
-        size_ordered_matrix_list_start = len(ordered_matrix_list)
-        for count, matrix in enumerate(matrix_list):
-            
-            last_point = ordered_matrix_list[-1][-1, :]
-            first_point = matrix[0, :]
-            
-            polyline1 = ordered_matrix_list[-1]
-            polyline2 = matrix
-            
-            #ensure you do not add a line that is identical and traces back on 
-            #itself
-            if check_identical_polyline(polyline1, polyline2):
-                del matrix_list[count]
-                continue
-            
-            if type(first_point) != type(None):
-                if ((first_point[0] == last_point[0])
-                    and (first_point[1] == last_point[1])):
-                    ordered_matrix_list.append(matrix)
-                    
-                    del matrix_list[count]
-                    
-        size_ordered_matrix_list_finish = len(ordered_matrix_list)
-        diff = size_ordered_matrix_list_start - size_ordered_matrix_list_finish
-    
-    return ordered_matrix_list
-
-def reverse_matricies(matrix_list):
-    '''
-    take a list of matricies, and reverse them all, but dont rearange them
-
-    Parameters
-    ----------
-    matrix_list : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    reversed_list : TYPE
-        DESCRIPTION.
-
-    '''
-    reversed_list = []
-    for count, matrix in enumerate(matrix_list):
-        reversed_list.append(np.flip(matrix, axis=0))
+    Args:
+        polyline_list (list): List of polylines, where each polyline is 
+        represented as a list of points.
         
-    return reversed_list
+        Each point is a 2D coordinate represented as a list or tuple.
+    
+    Returns:
+        list: List of ordered and merged polylines, where each polyline is 
+        represented as a list of points.
+    """
+    # Step 1: Build the graph
+    graph = nx.Graph()
+    for polyline in polyline_list:
+        # Add edges between consecutive points in the polyline
+        for i in range(len(polyline) - 1):
+            point1 = tuple(polyline[i])
+            point2 = tuple(polyline[i + 1])
+            graph.add_edge(point1, point2)
 
-def match_polylines_forward_backwards(polylines):
-    '''
-    Try and match matricies end to end, but also incase they are dran backwards
+    # Step 2: Identify connected components
+    connected_components = list(nx.connected_components(graph))
 
-    Parameters
-    ----------
-    polylines : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    merged_polylines : TYPE
-        DESCRIPTION.
-
-    '''
-    polyline_matricies = copy.deepcopy(polylines)
+    # Step 3: Merge and order polylines within each connected component
     merged_polylines = []
-    
-    while len(polyline_matricies) > 0:
-        ordered_matrix_list = []
-        ordered_matrix_list.append(polyline_matricies[0])
-        del polyline_matricies[0]
-        
-        ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
-        
-        diff = 1
-        
-        while diff > 0:
-            start_length = len(ordered_matrix)
-            polyline_matricies = reverse_matricies(polyline_matricies)
-            ordered_matrix = order_matricies(ordered_matrix_list, polyline_matricies)
+    for component in connected_components:
+        merged_polyline = []
+        endpoint_nodes = []
+        for point in component:
+            degree = graph.degree[point]
+            if degree == 1:
+                endpoint_nodes.append(point)
+        if len(endpoint_nodes) == 2:
+            start_point, end_point = endpoint_nodes
+            dfs_traversal(graph, start_point, end_point, merged_polyline)
+        elif len(endpoint_nodes) == 0:
+            for point in component:
+                merged_polyline.append(list(point))
+        else:
+            raise ValueError("Endpoint detection failed for a polyline.")
             
-            end_length = len(ordered_matrix)
-            diff = end_length - start_length
-            
-        merged_polylines.append(np.concatenate(ordered_matrix, axis=0))
-    
-    
+        if merged_polyline:
+            merged_polylines.append(np.array(merged_polyline))
+
     return merged_polylines
+
+def dfs_traversal(graph, start_point, end_point, merged_polyline):
+    """
+    Performs depth-first traversal on a graph starting from the start_point and 
+    ending at the end_point.
+    
+    Appends the visited points to the merged_polyline.
+    
+    Args:
+        graph (networkx.Graph): Graph representing the connectivity between 
+        points. start_point: Starting point for the traversal.
+        end_point: Ending point for the traversal.
+        merged_polyline (list): List to store the merged polyline points.
+    """
+    stack = [start_point]
+    visited = set()
+    while stack:
+        current_point = stack.pop()
+        visited.add(current_point)
+        merged_polyline.append(list(current_point))
+        if current_point == end_point:
+            break
+        neighbors = list(graph.neighbors(current_point))
+        for neighbor in neighbors:
+            if neighbor not in visited:
+                stack.append(neighbor)
 
 def numpy2pathstring(points):
     '''
@@ -707,9 +724,9 @@ if __name__ == "__main__":
     import pathlib
     
     input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/Cut1 - RA.svg')
+                              'Finger test/radius_cut.svg')
     output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/Cut1 - RA - closed.svg')
+                               'Finger test/radius_cut - closed.svg')
     
     svg = vector_object(input_path)
     svg.onshape2shaper(output_path, plot_line_checker=True)
