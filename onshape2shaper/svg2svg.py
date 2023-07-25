@@ -507,7 +507,6 @@ def order_polylines(polyline_list):
             start_point, end_point = endpoint_nodes[0], endpoint_nodes[1]
             dfs_traversal(graph, start_point, end_point, merged_polyline)
         elif len(endpoint_nodes) == 0:
-            print("closed")
             start_point = list(component)[0]
             dfs_traversal(graph, 
                           start_point, 
