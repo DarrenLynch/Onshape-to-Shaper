@@ -1,0 +1,1 @@
+import onshape2shaper.svg2svg as s2simport pathlibinput_path = pathlib.Path('WallBrace.svg')output_path = pathlib.Path('WallBrace - closed.svg')svg = s2s.vector_object(input_path)svg.onshape2shaper(output_path, plot_line_checker=True)
