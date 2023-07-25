@@ -407,7 +407,7 @@ class vector_object():
         '''
         self.read_svg()
         self._get_pixels_per_mm()
-        #self._add_shaper_xmlns()
+        self._add_shaper_xmlns()
         self._list_single_polylines()
         self.sort_colours()
 
@@ -473,18 +473,14 @@ def string2numpy(s):
 
 def order_polylines(polyline_list):
     """
-    Orders the points within each polyline and merges connected polylines in a 
-    list of 2D polylines.
+    Orders the points within each polyline and merges connected polylines in a list of 2D polylines.
     
     Args:
-        polyline_list (list): List of polylines, where each polyline is 
-        represented as a list of points.
-        
-        Each point is a 2D coordinate represented as a list or tuple.
+        polyline_list (list): List of polylines, where each polyline is represented as a list of points.
+            Each point is a 2D coordinate represented as a list or tuple.
     
     Returns:
-        list: List of ordered and merged polylines, where each polyline is 
-        represented as a list of points.
+        list: List of ordered and merged polylines, where each polyline is represented as a list of points.
     """
     # Step 1: Build the graph
     graph = nx.Graph()
@@ -505,32 +501,38 @@ def order_polylines(polyline_list):
         endpoint_nodes = []
         for point in component:
             degree = graph.degree[point]
-            if degree == 1:
+            if degree == 1 or degree > 2:
                 endpoint_nodes.append(point)
-        if len(endpoint_nodes) == 2:
-            start_point, end_point = endpoint_nodes
+        if len(endpoint_nodes) >= 2:
+            start_point, end_point = endpoint_nodes[0], endpoint_nodes[1]
             dfs_traversal(graph, start_point, end_point, merged_polyline)
         elif len(endpoint_nodes) == 0:
-            for point in component:
-                merged_polyline.append(list(point))
+            print("closed")
+            start_point = list(component)[0]
+            dfs_traversal(graph, 
+                          start_point, 
+                          start_point, 
+                          merged_polyline, 
+                          is_closed=True)
         else:
             raise ValueError("Endpoint detection failed for a polyline.")
-            
         if merged_polyline:
             merged_polylines.append(np.array(merged_polyline))
 
     return merged_polylines
 
-def dfs_traversal(graph, start_point, end_point, merged_polyline):
+def dfs_traversal(graph, 
+                  start_point, 
+                  end_point, 
+                  merged_polyline, 
+                  is_closed=False):
     """
-    Performs depth-first traversal on a graph starting from the start_point and 
-    ending at the end_point.
-    
+    Performs depth-first traversal on a graph starting from the start_point and ending at the end_point.
     Appends the visited points to the merged_polyline.
     
     Args:
-        graph (networkx.Graph): Graph representing the connectivity between 
-        points. start_point: Starting point for the traversal.
+        graph (networkx.Graph): Graph representing the connectivity between points.
+        start_point: Starting point for the traversal.
         end_point: Ending point for the traversal.
         merged_polyline (list): List to store the merged polyline points.
     """
@@ -540,12 +542,16 @@ def dfs_traversal(graph, start_point, end_point, merged_polyline):
         current_point = stack.pop()
         visited.add(current_point)
         merged_polyline.append(list(current_point))
-        if current_point == end_point:
+        if current_point == end_point and len(visited) == len(graph.nodes):
             break
         neighbors = list(graph.neighbors(current_point))
         for neighbor in neighbors:
             if neighbor not in visited:
                 stack.append(neighbor)
+        
+    if is_closed:
+        merged_polyline.append(list(start_point))
+
 
 def numpy2pathstring(points):
     '''
