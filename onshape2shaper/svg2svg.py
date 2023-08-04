@@ -79,19 +79,18 @@ class vector_object():
         None.
 
         '''
-        cleaned_dicts = remove_at_keys(self.original_svg_dict)
-        
+        cleaned_dicts = remove_at_keys(copy.deepcopy(self.svg_dict))
         for _dict in enumerate(zip(cleaned_dicts['svg']['g']['g'], 
-                         self.original_svg_dict['svg']['g']['g'])):
+                         self.svg_dict['svg']['g']['g'])):
             if _dict[1][0]:
+                
                 entity_type = list(_dict[1][0].keys())[0]
-                
                 stroke_colour = _dict[1][1]['@stroke']
-                
                 if (entity_type == 'polyline')\
                   and (stroke_colour.strip('#') == 'ff0000'):
                         
                     merged_polylines = self.to_merge_polylines(_dict)
+                    
                     self.to_anchor(_dict, merged_polylines)
                 
                 elif entity_type == 'polyline':
@@ -106,11 +105,13 @@ class vector_object():
         polyline_list = _dict[1][1]['polyline']
         polyline_list_cleaned = _dict[1][0]['polyline']
         polyline_matricies = []
-        
+        if type(polyline_list) != list:
+            polyline_list = [polyline_list]
+            
         for (points_dict, 
              points_dict_cleaned) in zip(polyline_list, 
                                          polyline_list_cleaned):
-            
+                                         
             if points_dict_cleaned:
                 polyline_matricies.append(string2numpy(points_dict['@points']))
                 
@@ -138,10 +139,11 @@ class vector_object():
         
     def to_anchor(self, _dict, merged_polylines):
         
+        self.svg_dict['svg']['g']['g'][_dict[0]]['polygon']=[]
+        
         for polyline in merged_polylines:
             cleaned_polyline = clean_anchor(polyline)
             
-            del self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']
 
             # Create a new 'polygon' dictionary with the desired attributes
             polygon_dict = {
@@ -150,10 +152,13 @@ class vector_object():
             }
             
             # Replace the 'polyline' dictionary with the 'polygon' dictionary
-            self.svg_dict['svg']['g']['g'][_dict[0]]['polygon'] = polygon_dict
+            self.svg_dict['svg']['g']['g'][_dict[0]]['polygon'].append(polygon_dict)
+            
+        del self.svg_dict['svg']['g']['g'][_dict[0]]['polyline']
             
     
     def sort_colours(self):
+        global groups, idx
         '''
         Identify all polylines with the same properties, and merge them
 
@@ -165,34 +170,18 @@ class vector_object():
             DESCRIPTION.
 
         '''
-        groups, idxs = get_grouped_dicts(self.original_svg_dict['svg']['g']['g'], 'polyline')
+        self.svg_dict['svg']['g']['g'] = filter_dict_keys(self.svg_dict['svg']['g']['g'], 'polyline')
+        groups, idxs = get_grouped_dicts(self.svg_dict['svg']['g']['g'], 'polyline')
         
-        for group, idx in zip(groups, idxs):
+        self.svg_dict['svg']['g']['g'] = []
+        
+        for i, group in enumerate(groups):
             if (len(group) > 1) and ('polyline' in group[0].keys()):
-                for i, appending_lines in enumerate(group):
-                    polyline_type = type(self.original_svg_dict['svg']['g']['g'][idx[0]]['polyline'])
-                    
-                    if i > 0 and polyline_type == list:
-                        self.original_svg_dict['svg']['g']['g'][idx[0]]['polyline'].extend(
-                            self.original_svg_dict['svg']['g']['g'][idx[i]]['polyline'])
-                        
-                    elif i > 0 and polyline_type == OrderedDict:
-                        raise ValueError("polyline is type OrderedDict, expected list")
-                        
-        
-        index_to_remove = []
-        for idx in idxs:
-            if (len(idx) > 1):
-                for i, appending_lines in enumerate(idx):
-                    if i > 0:
-                        index_to_remove.append(idx[i])
-                        
-        index_to_remove.sort(reverse=True)
-        
-        for index in index_to_remove:
-            del self.original_svg_dict['svg']['g']['g'][index]
-            del self.svg_dict['svg']['g']['g'][index]
-                        
+                merged_group = copy.deepcopy(group[0])
+                merged_group['polyline'] = merge_dicts_with_polyline(group)
+                self.svg_dict['svg']['g']['g'].append(merged_group)
+            elif (len(group) == 1) and ('polyline' in group[0].keys()):
+                self.svg_dict['svg']['g']['g'].append(group[0])
         
         return groups, idxs
             
@@ -322,8 +311,8 @@ class vector_object():
         for count, _dict in enumerate(self.svg_dict['svg']['g']['g']):
             if 'polyline' in _dict:
                 if type(_dict['polyline']) is OrderedDict:
-                    self.original_svg_dict['svg']['g']['g'][count]['polyline'] = \
-                        [self.original_svg_dict['svg']['g']['g'][count]['polyline']]
+                    self.svg_dict['svg']['g']['g'][count]['polyline'] = \
+                        [self.svg_dict['svg']['g']['g'][count]['polyline']]
     
     def plot_paths_rand_color(self):
         '''
@@ -422,6 +411,7 @@ class vector_object():
         if plot_line_checker:
             self.plot_paths_rand_color()
         
+        self.tosvg(output_path)
         
 def remove_at_keys(d):
     '''
@@ -725,14 +715,78 @@ def clean_anchor(polyline):
     else:
         return filtered_polyline
     
+def filter_dict_keys(dict_list, key_to_keep):
+    """
+    Filters a dictionary to retain only the keys that are "@stroke", "@fill", "@line-width",
+    and a specified key_to_keep.
+    
+    Args:
+        dictionary (dict): The input dictionary.
+        key_to_keep (str): The key that should be retained in the filtered dictionary.
+        
+    Returns:
+        dict: A new dictionary containing only the filtered keys.
+    """
+    for i, d in enumerate(dict_list):
+        keys_to_filter = ["@stroke", "@fill", "@stroke-width"]
+        keys_to_filter.append(key_to_keep)
+        
+        dict_list[i] = {key: value for key, value in d.items() if key in keys_to_filter}
+    return dict_list
+
+def merge_dicts_with_polyline(dicts_list):
+    """
+    Merges a list of dictionaries by joining the 'polyline' lists.
+
+    Args:
+        dicts_list (list): List of dictionaries, where each dictionary has a 'polyline' key with a list value.
+
+    Returns:
+        dict: A new dictionary with the 'polyline' list joined from all input dictionaries.
+    """
+    #merged_dict = {}
+    merged_polyline = []
+    
+    for dictionary in dicts_list:
+        if 'polyline' in dictionary and type(dictionary['polyline']) == list:
+            merged_polyline.extend(dictionary['polyline'])
+        elif 'polyline' in dictionary and type(dictionary['polyline']) == dict:
+                merged_polyline.append(dictionary['polyline'])
+            
+    #merged_dict['polyline'] = merged_polyline
+    return merged_polyline
+    
 if __name__ == "__main__":
     import pathlib
     
+    #Test 1
+    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                              'Finger test/A-frame.svg')
+        
+    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                               'Finger test/A-frame - closed.svg')
+    
+    svg = vector_object(input_path)
+    svg.onshape2shaper(output_path, plot_line_checker=True)
+    
+    #Test 2
+    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                              'Finger test/Test2.svg')
+        
+    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                               'Finger test/Test2 - closed.svg')
+    
+    svg = vector_object(input_path)
+    svg.onshape2shaper(output_path, plot_line_checker=True)
+    
+    #Test 3
     input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
                               'Finger test/radius_cut.svg')
+        
     output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
                                'Finger test/radius_cut - closed.svg')
     
     svg = vector_object(input_path)
     svg.onshape2shaper(output_path, plot_line_checker=True)
+    
     
