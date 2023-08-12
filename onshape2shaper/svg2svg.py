@@ -141,6 +141,10 @@ class vector_object():
         
         self.svg_dict['svg']['g']['g'][_dict[0]]['polygon']=[]
         
+        #If Shaper orgin start accepting multiple, this check can be removed
+        if len(merged_polylines) > 1:
+            raise Exception("Shaper currently accepts only one custom anchor")
+            
         for polyline in merged_polylines:
             cleaned_polyline = clean_anchor(polyline)
             
@@ -148,7 +152,7 @@ class vector_object():
             # Create a new 'polygon' dictionary with the desired attributes
             polygon_dict = {
                 '@points': to_points_string(cleaned_polyline),
-                '@fill': 'ff0000'
+                '@fill': '#ff0000'
             }
             
             # Replace the 'polyline' dictionary with the 'polygon' dictionary
