@@ -761,36 +761,46 @@ def merge_dicts_with_polyline(dicts_list):
     return merged_polyline
     
 if __name__ == "__main__":
+    test=False
+    
     import pathlib
-    
-    #Test 1
-    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/A-frame.svg')
+    if test:
+        #Test 1
+        input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                  'Finger test/A-frame.svg')
+            
+        output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                   'Finger test/A-frame - closed.svg')
         
-    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/A-frame - closed.svg')
-    
-    svg = vector_object(input_path)
-    svg.onshape2shaper(output_path, plot_line_checker=True)
-    
-    #Test 2
-    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/Test2.svg')
+        svg = vector_object(input_path)
+        svg.onshape2shaper(output_path, plot_line_checker=True)
         
-    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/Test2 - closed.svg')
-    
-    svg = vector_object(input_path)
-    svg.onshape2shaper(output_path, plot_line_checker=True)
-    
-    #Test 3
-    input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                              'Finger test/radius_cut.svg')
+        #Test 2
+        input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                  'Finger test/Test2.svg')
+            
+        output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                   'Finger test/Test2 - closed.svg')
         
-    output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
-                               'Finger test/radius_cut - closed.svg')
-    
-    svg = vector_object(input_path)
-    svg.onshape2shaper(output_path, plot_line_checker=True)
+        svg = vector_object(input_path)
+        svg.onshape2shaper(output_path, plot_line_checker=True)
+        
+        #Test 3
+        input_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                  'Finger test/radius_cut.svg')
+            
+        output_path = pathlib.Path('/Users/darrenlynch/Documents/Shaper Origin/'+\
+                                   'Finger test/radius_cut - closed.svg')
+        
+        svg = vector_object(input_path)
+        svg.onshape2shaper(output_path, plot_line_checker=True)
+    else:
+        #Run
+        input_path = pathlib.Path('/Users/darrenlynch/Downloads/Insert.svg')
+            
+        output_path = pathlib.Path('/Users/darrenlynch/Downloads/Insert - closed.svg')
+        
+        svg = vector_object(input_path)
+        svg.onshape2shaper(output_path, plot_line_checker=True)
     
     
